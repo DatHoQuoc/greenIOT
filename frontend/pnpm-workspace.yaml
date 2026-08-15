@@ -1,0 +1,9 @@
+# Nơi pnpm 10 đọc cấu hình. Trước đây các mục này nằm ở trường "pnpm" trong package.json;
+# pnpm 10 lặng lẽ BỎ QUA trường đó (chỉ cảnh báo), trong khi lockfile vẫn ghi lại override
+# — hai bên lệch nhau nên `pnpm install --frozen-lockfile` từ chối chạy với
+# ERR_PNPM_LOCKFILE_CONFIG_MISMATCH. Ở máy dev lỗi này không hiện ra vì đã có node_modules,
+# chỉ lộ khi cài từ đầu như trong Docker.
+#
+# Ghim hono do v0 sinh ra ban đầu; giữ nguyên để cây phụ thuộc không đổi.
+overrides:
+  hono: 4.12.25

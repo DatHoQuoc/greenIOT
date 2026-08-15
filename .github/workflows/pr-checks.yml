@@ -39,9 +39,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Số bản pnpm lấy từ trường "packageManager" trong frontend/package.json — khai ở
+      # một chỗ duy nhất, để CI và Dockerfile không bao giờ lệch nhau.
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

@@ -2,13 +2,23 @@
 # runtime stage possible — without it the whole node_modules tree has to ship.
 FROM node:22-alpine AS deps
 WORKDIR /app
-RUN corepack enable
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+# Cài thẳng pnpm thay vì qua corepack: corepack tự chọn bản mặc định của Node (9.x) trong
+# khi lockfile do pnpm 10 sinh ra, và một số bản corepack còn vướng lỗi xác thực chữ ký
+# registry ("Cannot find matching keyid"). Ghim số bản ở đây khớp với `packageManager`
+# trong package.json.
+RUN npm install -g pnpm@10.34.5
+# pnpm-workspace.yaml phải đi cùng: pnpm 10 đọc `overrides` từ đó, và nếu thiếu nó thì
+# lần cài này thấy "không có override" trong khi lockfile ghi là có → ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM node:22-alpine AS build
 WORKDIR /app
-RUN corepack enable
+# Cài thẳng pnpm thay vì qua corepack: corepack tự chọn bản mặc định của Node (9.x) trong
+# khi lockfile do pnpm 10 sinh ra, và một số bản corepack còn vướng lỗi xác thực chữ ký
+# registry ("Cannot find matching keyid"). Ghim số bản ở đây khớp với `packageManager`
+# trong package.json.
+RUN npm install -g pnpm@10.34.5
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ .
 
