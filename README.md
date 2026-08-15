@@ -69,6 +69,8 @@ every write goes by HTTP, so there is one auditable path with one auth mechanism
 
 ## Documentation
 
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — droplet setup, GitHub secrets, HTTPS and
+  cookie configuration, production checklist, rollback.
 - **[backend/docs/ARCHITECTURE.md](backend/docs/ARCHITECTURE.md)** — Boundary / Control /
   Entity breakdown, every MongoDB collection and field, the index plan, the MQTT and REST
   contracts, security model, tests, frontend integration and CI/CD.

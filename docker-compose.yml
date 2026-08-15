@@ -3,10 +3,18 @@ services:
     image: mongo:7
     container_name: greensense-mongodb
     restart: unless-stopped
+    # WiredTiger mặc định lấy cache = 50% × (RAM host − 1GB). Container không bị giới hạn
+    # thì Mongo nhìn thấy RAM của CẢ MÁY, nên trên droplet 8GB nó sẽ phình dần tới ~3.4GB
+    # và giết những thứ đang chạy cùng. Phải nói rõ con số, đừng để nó tự đoán.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
     environment:
       MONGO_INITDB_DATABASE: greensense
     ports:
-      - "27017:27017"
+      # Bind loopback, không phải 0.0.0.0 — Mongo không bật auth và không bao giờ nên nghe
+      # ra internet. Backend KHÔNG dùng cổng này (nó gọi `mongodb:27017` qua mạng nội bộ
+      # của compose); dòng này chỉ để cắm Compass vào xem dữ liệu. Đổi MONGO_PORT nếu
+      # cổng 27017 trên host đã có người dùng.
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -14,6 +22,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -24,6 +36,10 @@ services:
     volumes:
       - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto_data:/mosquitto/data
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   backend:
     image: ghcr.io/dathoquoc/greensense-backend:latest
@@ -44,9 +60,26 @@ services:
       REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
       REFRESH_COOKIE_SAME_SITE: ${REFRESH_COOKIE_SAME_SITE:-Lax}
       WEATHER_ENABLED: ${WEATHER_ENABLED:-false}
+      # Trên droplet dùng chung, để JVM nhìn thấy giới hạn container thay vì RAM của máy.
+      # -XX:+UseContainerSupport (đã bật trong Dockerfile) làm điều đó, nhưng -Xmx tường
+      # minh vẫn cần vì heap mặc định 25% của 8GB = 2GB.
+      JAVA_OPTS: ${JAVA_OPTS:--Xms192m -Xmx448m -XX:+UseContainerSupport}
     ports:
-      - "8080:8080"
+      # Cổng host tham số hoá vì trên droplet dùng chung, 8080 có thể đã có người giữ
+      # (visualedu-kafka-ui bind 127.0.0.1:8080). Bind 0.0.0.0 sẽ đụng cả với một socket
+      # đang giữ 127.0.0.1 cùng cổng — lỗi là "port is already allocated" lúc up.
+      # Khi đã có nginx đứng trước, đổi thành "127.0.0.1:${BACKEND_PORT:-8080}:8080".
+      - "${BACKEND_PORT:-8080}:8080"
+    deploy:
+      resources:
+        limits:
+          # Heap 448m + metaspace + thread stack + off-heap ≈ 650m. 768m là chỗ thở,
+          # không phải chỗ để phình.
+          memory: 768M
 
+  # Cân nhắc bỏ hẳn service này và đẩy frontend lên Vercel — visualedu đã làm vậy (repo
+  # frontend của nó không có Dockerfile nào). Tiết kiệm ~200MB trên droplet và được CDN
+  # miễn phí. Chỉ giữ ở đây nếu bạn muốn mọi thứ nằm trên một máy.
   frontend:
     image: ghcr.io/dathoquoc/greensense-frontend:latest
     container_name: greensense-frontend
@@ -54,7 +87,11 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 320M
 
 volumes:
   mongo_data:
