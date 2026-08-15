@@ -1,0 +1,231 @@
+### GreenSense — 03 · Reading the garden back
+#
+# Everything the app screens call. Run 00 → 01 → 02 first so there is data to see.
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# HOME SCREEN
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Dashboard — the whole home screen in one call
+# Sensor tiles, actuator pills, unread badge, latest soil card, hero counters and the
+# recent timeline. Deliberately one round trip: the mobile screen renders all of it at once.
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/dashboard
+Authorization: Bearer {{accessToken}}
+
+### Master switch OFF — the emergency stop
+# Suppresses every rule and schedule. Manual commands still work, so the garden stays
+# recoverable rather than becoming unreachable.
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/system
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "enabled": false }
+
+### Master switch back ON
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/system
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "enabled": true }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# CHARTS
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### 24-hour series (60-minute buckets)
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=temperature&range=24H
+Authorization: Bearer {{accessToken}}
+
+### 7-day series (3-hour buckets)
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=soil-moisture&range=7D
+Authorization: Bearer {{accessToken}}
+
+### 30-day series (12-hour buckets)
+# Bucket width scales with the range on purpose: a raw 30-day pull at 60 s sampling is
+# 43 200 points, which no phone chart wants and no mobile connection should carry.
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=temperature&range=30D
+Authorization: Bearer {{accessToken}}
+
+### Custom window
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=light&from=2026-08-05T00:00:00Z&to=2026-08-12T00:00:00Z
+Authorization: Bearer {{accessToken}}
+
+### Summary — current, min, max, and the "↑ Tăng 2°C so với hôm qua" delta
+# `delta` compares this window against the immediately preceding window of equal length.
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/summary?type=temperature&range=24H
+Authorization: Bearer {{accessToken}}
+
+### Latest value per sensor
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/latest
+Authorization: Bearer {{accessToken}}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ACTUATORS
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Actuator states
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators
+Authorization: Bearer {{accessToken}}
+
+### Start the pump by hand for 5 minutes
+# The reply carries the command's correlationId and status. SENT means it reached the
+# broker — not that the relay clicked. ACKED, from the device, is the proof.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_ON", "durationMinutes": 5 }
+
+### Stop the pump
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_OFF" }
+
+### Lock the pump to manual — rules can no longer drive it
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/mode
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "mode": "MANUAL" }
+
+### Hand it back to the automation
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/mode
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "mode": "AUTO" }
+
+### Command history — "did the hardware actually hear me?"
+# PENDING → SENT → ACKED is the happy path. TIMEOUT means the broker took it but no device
+# answered within 30 s, which is how a dead node becomes visible instead of silent.
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/commands
+Authorization: Bearer {{accessToken}}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ALERTS & TIMELINE
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Bell badge count
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts/unread-count
+Authorization: Bearer {{accessToken}}
+
+### Alert inbox
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts?page=0&size=20
+Authorization: Bearer {{accessToken}}
+
+> {%
+    if (response.body.data.items.length > 0) {
+        client.global.set("alertId", response.body.data.items[0].id);
+    }
+%}
+
+### Unread only
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts?unreadOnly=true
+Authorization: Bearer {{accessToken}}
+
+### Still-open alerts
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts?status=OPEN
+Authorization: Bearer {{accessToken}}
+
+### Mark one read
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts/{{alertId}}/read
+Authorization: Bearer {{accessToken}}
+
+### Acknowledge — "I have seen this and I am handling it"
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts/{{alertId}}/acknowledge
+Authorization: Bearer {{accessToken}}
+
+### Mark everything read
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/alerts/read-all
+Authorization: Bearer {{accessToken}}
+
+### Timeline — "Lịch sử kích hoạt tự động"
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/events?limit=20
+Authorization: Bearer {{accessToken}}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# SOIL
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Latest pH with its fertiliser recommendation
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/latest
+Authorization: Bearer {{accessToken}}
+
+### Enter a pH measured by hand with a test kit
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/analyze
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ph": 6.2 }
+
+> {%
+    client.test("pH 6.2 maps to the slightly-acidic plan", function () {
+        client.assert(response.body.data.zone === "SLIGHTLY_ACIDIC");
+        client.assert(response.body.data.recommendation.dosage === "200g vôi/m² + 50g NPK/m²");
+    });
+%}
+
+### Strongly acidic soil gets a different plan
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/analyze
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ph": 4.9 }
+
+### Alkaline soil gets a third plan
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/analyze
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ph": 8.1 }
+
+### The pH reference scale card
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/ph-scale
+Authorization: Bearer {{accessToken}}
+
+### pH history
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/history
+Authorization: Bearer {{accessToken}}
+
+### "Đánh dấu đã bón phân hôm nay"
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "note": "Bón quanh gốc, tưới nhẹ sau khi bón" }
+
+### Was it marked today?
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer/today
+Authorization: Bearer {{accessToken}}
+
+### Undo today's mark
+DELETE {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer/today
+Authorization: Bearer {{accessToken}}
+
+### Fertiliser log
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer/history
+Authorization: Bearer {{accessToken}}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# SCHEDULES & EXPORT
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Watering schedules
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/schedules
+Authorization: Bearer {{accessToken}}
+
+### Water now — overrides the master switch AND the moisture skip
+# An explicit human instruction beats both guards; the guards exist to stop the *machine*
+# watering pointlessly, not to argue with a person holding a watering can.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/schedules/{{scheduleId}}/run-now
+Authorization: Bearer {{accessToken}}
+
+### Export readings as CSV
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/export/readings.csv?type=temperature
+Authorization: Bearer {{accessToken}}
+
+### Export readings as JSON
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/export/readings.json?type=soil-moisture
+Authorization: Bearer {{accessToken}}

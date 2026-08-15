@@ -1,0 +1,295 @@
+### GreenSense — 01 · Provisioning a garden and its hardware
+#
+# Run 00-auth.http first. This file builds the plot the device simulator then feeds:
+# one garden, five probe types, a pump, a fan, a curtain, and the automation that ties
+# them together.
+#
+# Everything here is OWNER-only. A household member gets 403 — see 04-edge-cases.http.
+
+### Reference crop profiles (seeds a new garden's thresholds)
+GET {{baseUrl}}/api/v1/plant-profiles
+Authorization: Bearer {{accessToken}}
+
+> {%
+    if (response.body.data.length > 0) {
+        client.global.set("plantProfileId", response.body.data[0].id);
+    }
+%}
+
+### Create the garden
+POST {{baseUrl}}/api/v1/gardens
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Vườn Nhà",
+  "description": "Garden Outdoor",
+  "type": "OUTDOOR",
+  "areaSqm": 24,
+  "timezone": "Asia/Ho_Chi_Minh",
+  "plantProfileId": "{{plantProfileId}}",
+  "location": {
+    "latitude": 10.8231,
+    "longitude": 106.6297,
+    "address": "TP. Hồ Chí Minh"
+  }
+}
+
+> {%
+    client.global.set("gardenId", response.body.data.id);
+    client.log("gardenId = " + response.body.data.id);
+%}
+
+### List my gardens (own + shared with me)
+GET {{baseUrl}}/api/v1/gardens
+Authorization: Bearer {{accessToken}}
+
+> {%
+    // Pick up an existing garden when the seeder already made one.
+    if (response.body.data.length > 0 && !client.global.get("gardenId")) {
+        client.global.set("gardenId", response.body.data[0].id);
+    }
+%}
+
+### Register the temperature probe
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "temp-1",
+  "type": "TEMPERATURE",
+  "name": "Nhiệt độ khu A",
+  "samplingIntervalSec": 60
+}
+
+### Register the air-humidity probe
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "hum-1",
+  "type": "AIR_HUMIDITY",
+  "name": "Độ ẩm KK khu A",
+  "samplingIntervalSec": 60
+}
+
+### Register the soil-moisture probe
+# calibrationOffset/-Scale map the raw ADC reading onto a percentage. Sending them here
+# means the firmware can stay dumb and publish raw counts.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "soil-1",
+  "type": "SOIL_MOISTURE",
+  "name": "Độ ẩm đất luống 1",
+  "samplingIntervalSec": 60,
+  "calibrationOffset": 0,
+  "calibrationScale": 1
+}
+
+### Register the light probe
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "lux-1",
+  "type": "LIGHT",
+  "name": "Ánh sáng khu A",
+  "samplingIntervalSec": 300
+}
+
+### Register the pH probe
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "ph-1",
+  "type": "PH",
+  "name": "pH luống 1",
+  "samplingIntervalSec": 3600
+}
+
+### List the registered sensors
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+
+### Register the pump
+# maxRuntimeMinutes is a hardware safety cap: even a buggy rule cannot run this motor
+# longer, because the auto-off sweep forces it off.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "pump-1",
+  "type": "WATER_PUMP",
+  "name": "Bơm nước luống 1-2",
+  "maxRuntimeMinutes": 20,
+  "cooldownMinutes": 30
+}
+
+> {% client.global.set("pumpId", response.body.data.id); %}
+
+### Register the fan
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "fan-1",
+  "type": "FAN",
+  "name": "Quạt tản nhiệt",
+  "maxRuntimeMinutes": 120,
+  "cooldownMinutes": 5
+}
+
+> {% client.global.set("fanId", response.body.data.id); %}
+
+### Register the curtain
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "deviceCode": "{{deviceCode}}",
+  "channel": "curtain-1",
+  "type": "CURTAIN",
+  "name": "Rèm che nắng",
+  "maxRuntimeMinutes": 600,
+  "cooldownMinutes": 5
+}
+
+### Set the warning bands
+# warnLow/warnHigh are the dashed lines on the charts; min/max are the hard bounds that
+# escalate an alert to CRITICAL.
+PUT {{baseUrl}}/api/v1/gardens/{{gardenId}}/thresholds
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "thresholds": {
+    "TEMPERATURE":   { "min": 15,  "max": 38,    "warnLow": 18,  "warnHigh": 30,    "unit": "°C" },
+    "AIR_HUMIDITY":  { "min": 30,  "max": 95,    "warnLow": 45,  "warnHigh": 85,    "unit": "%" },
+    "SOIL_MOISTURE": { "min": 20,  "max": 85,    "warnLow": 35,  "warnHigh": 75,    "unit": "%" },
+    "LIGHT":         { "min": 100, "max": 60000, "warnLow": 400, "warnHigh": 20000, "unit": "lux" },
+    "PH":            { "min": 4.5, "max": 9,     "warnLow": 5.5, "warnHigh": 7.5,   "unit": "pH" }
+  }
+}
+
+### Rule — fan on when it stays above 30 °C for 5 minutes
+# sustainedForMinutes is what stops one noisy sample from starting the motor. Set it to 0
+# and the simulator's "spike" scenario will trip the fan on a single reading.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Quạt tản nhiệt",
+  "enabled": true,
+  "priority": 10,
+  "condition": {
+    "sensorType": "TEMPERATURE",
+    "operator": "GT",
+    "value": 30,
+    "sustainedForMinutes": 5
+  },
+  "action": {
+    "actuatorType": "FAN",
+    "command": "TURN_ON",
+    "durationMinutes": 30,
+    "raiseAlert": false
+  },
+  "cooldownMinutes": 15
+}
+
+### Rule — emergency watering when the soil dries out
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Tưới khẩn cấp khi đất khô",
+  "enabled": true,
+  "priority": 20,
+  "condition": {
+    "sensorType": "SOIL_MOISTURE",
+    "operator": "LT",
+    "value": 30,
+    "sustainedForMinutes": 0
+  },
+  "action": {
+    "actuatorType": "WATER_PUMP",
+    "command": "TURN_ON",
+    "durationMinutes": 10,
+    "raiseAlert": true,
+    "alertSeverity": "WARNING"
+  },
+  "cooldownMinutes": 60
+}
+
+### Rule — close the curtain in harsh midday sun
+# activeFrom/activeTo keep this from firing at 3 a.m. if a lamp confuses the probe.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Đóng rèm khi nắng gắt",
+  "enabled": true,
+  "priority": 30,
+  "condition": {
+    "sensorType": "LIGHT",
+    "operator": "GT",
+    "value": 20000,
+    "sustainedForMinutes": 10
+  },
+  "action": {
+    "actuatorType": "CURTAIN",
+    "command": "CLOSE"
+  },
+  "cooldownMinutes": 30,
+  "activeFrom": "09:00:00",
+  "activeTo": "16:00:00"
+}
+
+### Irrigation schedule — 06:00 daily, skipped if the soil is already wet
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/schedules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Tưới sáng",
+  "actuatorId": "{{pumpId}}",
+  "enabled": true,
+  "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+  "startTime": "06:00:00",
+  "durationMinutes": 15,
+  "skipIfSoilMoistureAbove": 60,
+  "skipIfRainForecast": true
+}
+
+> {% client.global.set("scheduleId", response.body.data.id); %}
+
+### Share the garden with a household member
+# The invitee must already have a GreenSense account — 404 otherwise, on purpose: silently
+# creating accounts from an email address is how invite spam starts.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/members
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{memberEmail}}"
+}

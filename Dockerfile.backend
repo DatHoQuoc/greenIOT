@@ -1,0 +1,33 @@
+# Multi-stage: build with the JDK + Maven, ship on a JRE.
+# The runtime image carries no compiler and no build cache, which is both smaller and a
+# smaller attack surface than shipping the build image.
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /build
+
+# Dependencies are resolved in their own layer so a source-only change does not re-download
+# the world on every push.
+COPY backend/pom.xml .
+RUN mvn -B -DskipTests dependency:go-offline
+
+COPY backend/src ./src
+# Tests run in CI against an embedded MongoDB; running them again here would download a
+# mongod binary into every image build for no extra signal.
+RUN mvn -B -DskipTests clean package
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+
+# Never run as root: a container escape should not land on a privileged account.
+RUN addgroup -S greensense && adduser -S greensense -G greensense
+COPY --from=build /build/target/greensense-backend-*.jar app.jar
+RUN chown -R greensense:greensense /app
+USER greensense
+
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseContainerSupport"
+EXPOSE 8080
+
+# Compose and the deploy script both wait on this before declaring the release healthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+
+ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]

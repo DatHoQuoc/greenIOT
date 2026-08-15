@@ -1,0 +1,100 @@
+### GreenSense — 00 · Authentication
+#
+# Run this file FIRST. Every other file reuses {{accessToken}} and {{gardenId}}, which are
+# captured here by the response handlers below.
+#
+# IntelliJ / VS Code REST Client. Pick an environment from http-client.env.json (`local`
+# unless you are pointing at a deployed box).
+#
+# The refresh token never appears in a response body — it arrives as an HttpOnly cookie
+# and the client sends it back automatically. That is why there is no `refreshToken`
+# variable anywhere in these files.
+
+### Register a fresh owner
+# 409 EMAIL_TAKEN just means the seeder already created this account — skip to Login.
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "fullName": "Chủ vườn Demo",
+  "phone": "0900000001"
+}
+
+> {%
+    if (response.status === 201) {
+        client.global.set("accessToken", response.body.data.accessToken);
+        client.log("Registered, access token stored");
+    }
+%}
+
+### Login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+> {%
+    client.test("login succeeds", function () {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+    });
+    client.global.set("accessToken", response.body.data.accessToken);
+    client.global.set("userId", response.body.data.user.id);
+%}
+
+### Who am I
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{accessToken}}
+
+### Silent refresh — rotates the cookie, returns a NEW access token
+# The old cookie is spent by this call. Replaying it is treated as theft and kills every
+# session for the account (see 04-edge-cases.http).
+POST {{baseUrl}}/api/v1/auth/refresh
+
+> {%
+    if (response.status === 200) {
+        client.global.set("accessToken", response.body.data.accessToken);
+    }
+%}
+
+### Update profile + quiet hours
+# Quiet hours silence INFO and WARNING notifications only; a CRITICAL alert still gets
+# through, because that is the one you set an alarm for.
+PUT {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "fullName": "Chủ vườn Demo",
+  "notifyByPush": true,
+  "notifyByEmail": false,
+  "quietHoursStart": "22:00:00",
+  "quietHoursEnd": "06:00:00"
+}
+
+### Register a device push token
+POST {{baseUrl}}/api/v1/auth/me/push-tokens
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "token": "fcm-demo-device-token-001"
+}
+
+### Change password — ends every OTHER session
+# Run this and the refresh cookie above stops working; you must log in again.
+PATCH {{baseUrl}}/api/v1/auth/me/password
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "{{password}}",
+  "newPassword": "Green@1234"
+}
+
+### Logout
+POST {{baseUrl}}/api/v1/auth/logout

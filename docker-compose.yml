@@ -1,0 +1,61 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: greensense-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: greensense
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: greensense-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+
+  backend:
+    image: ghcr.io/dathoquoc/greensense-backend:latest
+    container_name: greensense-backend
+    restart: unless-stopped
+    # Only Mongo is a hard dependency: the API boots fine with the broker down and
+    # reconnects when it returns, so a broker restart must not take the API with it.
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      MONGODB_URI: mongodb://mongodb:27017/greensense
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      REFRESH_COOKIE_SAME_SITE: ${REFRESH_COOKIE_SAME_SITE:-Lax}
+      WEATHER_ENABLED: ${WEATHER_ENABLED:-false}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: ghcr.io/dathoquoc/greensense-frontend:latest
+    container_name: greensense-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo_data:
+  mosquitto_data:

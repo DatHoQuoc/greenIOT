@@ -1,0 +1,211 @@
+### GreenSense — 04 · Failure modes worth rehearsing
+#
+# Every request here is SUPPOSED to fail. They document the guards, and they are the ones
+# to re-run after touching security or the actuator state machine.
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATION — 401 vs 403 is not cosmetic
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### No token → 401 UNAUTHORIZED
+# 401 tells the client "refresh and retry"; 403 tells it "stop, this will never work".
+# Collapsing them into one status is why some apps either retry forever or never at all.
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/dashboard
+
+### Garbage token → 401
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/dashboard
+Authorization: Bearer not-a-real-token
+
+### Expired/forged signature → 401
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYWtlIn0.wrong-signature
+
+### Refresh with no cookie → 409 NO_REFRESH_TOKEN
+POST {{baseUrl}}/api/v1/auth/refresh
+
+### Password below the 8-character minimum → 400 with the field named
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{ "email": "weak@greensense.vn", "password": "short", "fullName": "Weak" }
+
+### Malformed email → 400
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{ "email": "not-an-email", "password": "Green@123", "fullName": "Bad" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# AUTHORISATION
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Log in as the household member
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{memberEmail}}", "password": "{{memberPassword}}" }
+
+> {% client.global.set("memberToken", response.body.data.accessToken); %}
+
+### Member CAN read the shared garden → 200
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/dashboard
+Authorization: Bearer {{memberToken}}
+
+### Member CAN hit the emergency stop → 200
+# Deliberate: someone standing in a flooding garden should not have to phone the owner.
+PATCH {{baseUrl}}/api/v1/gardens/{{gardenId}}/system
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{ "enabled": true }
+
+### Member CANNOT register hardware → 403
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{ "deviceCode": "ESP32-B2", "channel": "temp-9", "type": "TEMPERATURE" }
+
+### Member CANNOT rewrite the automation → 403
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "name": "Sneaky",
+  "condition": { "sensorType": "TEMPERATURE", "operator": "GT", "value": 5 },
+  "action": { "actuatorType": "FAN", "command": "TURN_ON" }
+}
+
+### Member CANNOT delete the garden → 403
+DELETE {{baseUrl}}/api/v1/gardens/{{gardenId}}
+Authorization: Bearer {{memberToken}}
+
+### Someone else's garden → 404, NOT 403
+# A 403 would confirm the id exists and let an attacker enumerate gardens. The response is
+# deliberately identical to a garden that was never there.
+GET {{baseUrl}}/api/v1/gardens/000000000000000000000000/dashboard
+Authorization: Bearer {{accessToken}}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ACTUATOR STATE MACHINE
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Turn the pump on
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_ON", "durationMinutes": 5 }
+
+### Turn it on again while it is already running → 409 ALREADY_IN_STATE
+# A person pressing a button gets told why nothing happened. The same refusal from a RULE
+# is silent — an automation does not need an explanation, and logging one per reading
+# would drown the log.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_ON", "durationMinutes": 5 }
+
+### Duration below 1 minute → 400
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_ON", "durationMinutes": 0 }
+
+### Unknown command verb → 400
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/{{pumpId}}/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "EXPLODE" }
+
+### Actuator from another garden → 404
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/actuators/000000000000000000000000/command
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "command": "TURN_ON" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Duplicate sensor channel → 409 SENSOR_EXISTS
+# One physical probe registers once; a second registration is a mistake, not an update.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/sensors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "deviceCode": "{{deviceCode}}", "channel": "temp-1", "type": "TEMPERATURE" }
+
+### Rule with no target → 409 RULE_NO_TARGET
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Nowhere",
+  "condition": { "sensorType": "TEMPERATURE", "operator": "GT", "value": 30 },
+  "action": { "command": "TURN_ON" }
+}
+
+### BETWEEN without an upper bound → 409 RULE_MISSING_BOUND
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Half a range",
+  "condition": { "sensorType": "TEMPERATURE", "operator": "BETWEEN", "value": 20 },
+  "action": { "actuatorType": "FAN", "command": "TURN_ON" }
+}
+
+### Inverted range → 409 RULE_BAD_BOUND
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/rules
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Backwards",
+  "condition": { "sensorType": "TEMPERATURE", "operator": "BETWEEN", "value": 30, "secondValue": 20 },
+  "action": { "actuatorType": "FAN", "command": "TURN_ON" }
+}
+
+### pH outside 0–14 → 400
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/analyze
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ph": 15.2 }
+
+### Marking fertiliser twice in one day → 409 ALREADY_FERTILIZED
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+###
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/soil/fertilizer
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+### Unknown sensor type slug → 400
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=radiation&range=24H
+Authorization: Bearer {{accessToken}}
+
+### Unsupported range → 400
+GET {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/series?type=temperature&range=99Y
+Authorization: Bearer {{accessToken}}
+
+### Inviting someone with no account → 404
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/members
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "email": "ghost@greensense.vn" }

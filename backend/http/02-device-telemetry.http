@@ -1,0 +1,235 @@
+### GreenSense — 02 · Fake IoT devices reporting in
+#
+# These are the HTTP-fallback equivalents of what an ESP32 publishes over MQTT. The
+# handler is the same `TelemetryIngestControl` either way, so anything you can provoke
+# here also happens on the broker path.
+#
+# For the MQTT versions of the same scenarios, see mqtt-scenarios.md in this folder, or
+# run tools/device-simulator (which drives them continuously).
+#
+# Run 00-auth.http and 01-provisioning.http first.
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# HAPPY PATH — everything inside its band
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### A calm afternoon: nothing breaches, nothing fires
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1",  "value": 27.4 },
+    { "deviceCode": "{{deviceCode}}", "channel": "hum-1",   "value": 65.0 },
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1",  "value": 48.0 },
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1",   "value": 850  },
+    { "deviceCode": "{{deviceCode}}", "channel": "ph-1",    "value": 6.2  }
+  ]
+}
+
+> {%
+    client.test("all five readings accepted", function () {
+        client.assert(response.body.data === 5, "expected 5 accepted, got " + response.body.data);
+    });
+%}
+
+### A single reading with an explicit timestamp
+# A node that buffered while offline replays with the ORIGINAL timestamp, not "now" —
+# otherwise a two-hour outage collapses into one spike on the chart.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 26.8, "timestamp": "2026-08-12T03:00:00Z" }
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# THRESHOLD BREACH — raises an alert, drives the bell badge
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Too hot (31.5 °C, warnHigh is 30) → WARNING alert
+# Run this twice inside 30 minutes and the second one raises NOTHING: identical alerts are
+# de-duplicated per (code, sensor). That is why a probe reporting every 30 s while the plot
+# is dry does not produce 120 notifications an hour.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 31.5 }
+  ]
+}
+
+### Dangerously hot (39 °C, hard max is 38) → CRITICAL alert
+# CRITICAL is also the severity that punches through quiet hours.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 39.0 }
+  ]
+}
+
+### Back inside the band → the open alert is RESOLVED automatically
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 27.0 }
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# AUTOMATION — a reading that starts hardware
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Dry soil (24 %, rule fires under 30) → pump starts, alert raised
+# Check the result with 03-operations.http → "Actuator states": pump-1 should be ON with
+# lastChangedBy=RULE, and the timeline should carry
+# "Bơm nước luống 1-2 tự động bật / độ ẩm đất dưới 30%".
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 24.0 }
+  ]
+}
+
+### Harsh sun (25 000 lux) → curtain closes, but only between 09:00 and 16:00 local
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1", "value": 25000 }
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FAULTY HARDWARE — the scenarios that must NOT drive automation
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Disconnected soil probe reads exactly 0 % → SUSPECT
+# This is the important one. 0 % looks like "bone dry" and would start the pump; because
+# the value sits exactly on the rail it is flagged SUSPECT instead, automation is skipped
+# for that sensor, and a fault alert tells the operator to check the cable.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 0 }
+  ]
+}
+
+### Probe pegged at full scale → also SUSPECT
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "hum-1", "value": 100 }
+  ]
+}
+
+### Physically impossible temperature → BAD, stored for diagnosis only
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": -273.15 }
+  ]
+}
+
+### pH out of the 0–14 range → BAD
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "ph-1", "value": 17.4 }
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# REJECTED INPUT
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Unregistered channel → accepted count is 0, nothing stored
+# Hardware is never auto-provisioned from traffic: an unknown code is dropped and logged.
+# Otherwise anyone who can reach the broker could invent sensors in your garden.
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "ESP32-GHOST", "channel": "temp-99", "value": 25.0 }
+  ]
+}
+
+> {%
+    client.test("unknown hardware is dropped", function () {
+        client.assert(response.body.data === 0, "expected 0 accepted, got " + response.body.data);
+    });
+%}
+
+### Missing value → 400 with the offending field named
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1" }
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# A FULL DAY, COMPRESSED — paste-and-run to give the charts something to draw
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+### Overnight → morning → midday → evening, in one batch
+POST {{baseUrl}}/api/v1/gardens/{{gardenId}}/readings/ingest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "readings": [
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 22.1, "timestamp": "2026-08-12T00:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 21.4, "timestamp": "2026-08-12T03:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 24.9, "timestamp": "2026-08-12T06:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 29.7, "timestamp": "2026-08-12T09:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 31.8, "timestamp": "2026-08-12T12:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 30.2, "timestamp": "2026-08-12T15:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 26.5, "timestamp": "2026-08-12T18:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "temp-1", "value": 23.8, "timestamp": "2026-08-12T21:00:00Z" },
+
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 58.0, "timestamp": "2026-08-12T00:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 55.0, "timestamp": "2026-08-12T06:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 47.0, "timestamp": "2026-08-12T12:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "soil-1", "value": 41.0, "timestamp": "2026-08-12T18:00:00Z" },
+
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1",  "value": 0,     "timestamp": "2026-08-12T00:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1",  "value": 4200,  "timestamp": "2026-08-12T06:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1",  "value": 18500, "timestamp": "2026-08-12T12:00:00Z" },
+    { "deviceCode": "{{deviceCode}}", "channel": "lux-1",  "value": 900,   "timestamp": "2026-08-12T18:00:00Z" }
+  ]
+}

@@ -1,0 +1,90 @@
+spring:
+  application:
+    name: greensense-backend
+  profiles:
+    active: dev
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/greensense}
+      auto-index-creation: true
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+greensense:
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:Z3JlZW5zZW5zZS1kZXYtc2VjcmV0LWtleS1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi0yMDI2}
+      expiration-minutes: ${JWT_EXPIRATION_MINUTES:30}
+      refresh-expiration-days: ${JWT_REFRESH_DAYS:30}
+      issuer: greensense
+      refresh-cookie-name: gs_refresh
+      # Must be true wherever the app is served over HTTPS.
+      refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
+      # Cross-site frontend (different domain from the API) needs None + secure.
+      refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:Lax}
+  weather:
+    enabled: ${WEATHER_ENABLED:false}
+    lookahead-hours: 6
+    rain-probability-threshold: 60
+    cache-minutes: 30
+  mqtt:
+    enabled: ${MQTT_ENABLED:true}
+    broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+    client-id: greensense-server
+    username: ${MQTT_USERNAME:}
+    password: ${MQTT_PASSWORD:}
+    topic-root: greensense
+    qos: 1
+  readings:
+    retention-days: 180
+    # a sensor silent for this many times its sampling interval is considered offline
+    offline-factor: 3
+  automation:
+    # minimum gap between two identical alerts, prevents notification storms
+    alert-dedupe-minutes: 30
+    command-timeout-seconds: 30
+
+logging:
+  level:
+    com.greeniot.greensense: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+greensense:
+  seed:
+    enabled: true
+logging:
+  level:
+    com.greeniot.greensense: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+greensense:
+  seed:
+    enabled: false

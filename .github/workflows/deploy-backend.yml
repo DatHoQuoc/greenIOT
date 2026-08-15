@@ -1,0 +1,103 @@
+name: deploy-backend
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'Dockerfile.backend'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: dathoquoc
+  IMAGE: greensense-backend
+
+jobs:
+  # The image build runs -DskipTests to keep it fast, so this job is the ONLY thing
+  # standing between a red test and production. It must stay a hard gate.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # The suite runs on an embedded MongoDB; the binary is ~100 MB, so it is cached
+      # between runs rather than downloaded on every push.
+      - name: Cache embedded MongoDB
+        uses: actions/cache@v4
+        with:
+          path: ~/.embedmongo
+          key: embedmongo-${{ runner.os }}-7.0.4
+      - name: Test
+        working-directory: backend
+        run: mvn -B verify
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
+
+  build-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ghcr.io/dathoquoc/greensense-backend:latest
+            ghcr.io/dathoquoc/greensense-backend:${{ github.sha }}
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/greensense
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u dathoquoc --password-stdin
+            flock -w 600 /tmp/greensense-deploy.lock -c '
+              set -e
+              cd /opt/greensense
+              docker compose pull backend
+              docker compose up -d backend
+              # Wait on the container HEALTHCHECK rather than a fixed sleep: Spring Boot
+              # start-up time varies with droplet load, and a sleep that is long enough
+              # today silently becomes too short later.
+              for i in $(seq 1 30); do
+                status=$(docker inspect -f "{{.State.Health.Status}}" greensense-backend 2>/dev/null || echo starting)
+                [ "$status" = "healthy" ] && break
+                [ "$i" = "30" ] && { docker logs --tail 100 greensense-backend; exit 1; }
+                sleep 5
+              done
+            '
+            docker image prune -f

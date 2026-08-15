@@ -1,0 +1,22 @@
+{
+  "name": "greensense-device-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fake ESP32 fleet that drives the GreenSense backend end to end",
+  "scripts": {
+    "start": "node simulate.mjs",
+    "http": "node simulate.mjs --transport=http",
+    "provision": "node simulate.mjs --provision --once",
+    "drought": "node simulate.mjs --scenario=drought --interval=5",
+    "heatwave": "node simulate.mjs --scenario=heatwave --interval=5",
+    "faulty": "node simulate.mjs --scenario=faulty --interval=5",
+    "storm": "node simulate.mjs --scenario=storm --interval=5"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
