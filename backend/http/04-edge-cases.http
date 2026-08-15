@@ -3,6 +3,23 @@
 # Every request here is SUPPOSED to fail. They document the guards, and they are the ones
 # to re-run after touching security or the actuator state machine.
 
+# ── Cấu hình — sửa ở đây ────────────────────────────────────
+# Giữ khớp với 00-auth.http. Biến khai ngay trong file, nên đổi là đổi tại chỗ — không
+# phải đi tìm environment nào khác.
+@baseUrl = https://green.visualedu.ai.vn
+# @baseUrl = http://localhost:8080
+# @baseUrl = http://159.65.4.47:8090
+
+@email = green123@gmail.com
+@password = Green@1508
+@memberEmail = member@greensense.vn
+@memberPassword = Green@123
+@deviceCode = ESP32-A1
+
+# {{accessToken}}, {{gardenId}}, {{pumpId}}, {{scheduleId}}, {{alertId}} KHÔNG khai ở đây:
+# chúng được bắt từ response khi chạy 00-auth.http và 01-provisioning.http.
+# ────────────────────────────────────────────────────────────────────────────────────
+
 # ═══════════════════════════════════════════════════════════════════════════════════
 # AUTHENTICATION — 401 vs 403 is not cosmetic
 # ═══════════════════════════════════════════════════════════════════════════════════
@@ -20,7 +37,7 @@ Authorization: Bearer not-a-real-token
 GET {{baseUrl}}/api/v1/auth/me
 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYWtlIn0.wrong-signature
 
-### Refresh with no cookie → 409 NO_REFRESH_TOKEN
+### Refresh with no cookie → 401 NO_REFRESH_TOKEN
 POST {{baseUrl}}/api/v1/auth/refresh
 
 ### Password below the 8-character minimum → 400 with the field named

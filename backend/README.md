@@ -69,6 +69,10 @@ what each test protects.
 
 ## Exercising it by hand
 
+Config lives at the top of each `.http` file as `@baseUrl`, `@email`, `@password` — edit in
+place, no environment file to pick. Values captured from responses (`{{accessToken}}`,
+`{{gardenId}}`) still come from the response handlers, since they change every run.
+
 | Where | What |
 |---|---|
 | [`http/00-auth.http`](http/00-auth.http) | login, silent refresh, profile, password change |

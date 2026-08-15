@@ -2,6 +2,7 @@ package com.greeniot.greensense.boundary.dto;
 
 import com.greeniot.greensense.entity.SensorReading;
 import com.greeniot.greensense.entity.enums.SensorType;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -21,7 +22,13 @@ public final class ReadingDtos {
             Instant timestamp) {
     }
 
-    public record IngestBatchRequest(@NotNull List<IngestRequest> readings) {
+    /**
+     * {@code @Valid} trên danh sách là bắt buộc, không phải trang trí: thiếu nó thì bean
+     * validation dừng ở mức "danh sách khác null" và KHÔNG đi vào từng phần tử — một
+     * reading thiếu {@code value} lọt qua dạng null rồi nổ NPE ở tầng dưới, client nhận
+     * 500 thay vì 400 kèm tên trường sai.
+     */
+    public record IngestBatchRequest(@NotNull @Valid List<IngestRequest> readings) {
     }
 
     public record ReadingResponse(Instant timestamp, Double value, String unit, SensorType type, String sensorId) {

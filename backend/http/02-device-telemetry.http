@@ -9,6 +9,23 @@
 #
 # Run 00-auth.http and 01-provisioning.http first.
 
+# ── Cấu hình — sửa ở đây ────────────────────────────────────
+# Giữ khớp với 00-auth.http. Biến khai ngay trong file, nên đổi là đổi tại chỗ — không
+# phải đi tìm environment nào khác.
+@baseUrl = https://green.visualedu.ai.vn
+# @baseUrl = http://localhost:8080
+# @baseUrl = http://159.65.4.47:8090
+
+@email = green123@gmail.com
+@password = Green@1508
+@memberEmail = member@greensense.vn
+@memberPassword = Green@123
+@deviceCode = ESP32-A1
+
+# {{accessToken}}, {{gardenId}}, {{pumpId}}, {{scheduleId}}, {{alertId}} KHÔNG khai ở đây:
+# chúng được bắt từ response khi chạy 00-auth.http và 01-provisioning.http.
+# ────────────────────────────────────────────────────────────────────────────────────
+
 # ═══════════════════════════════════════════════════════════════════════════════════
 # HAPPY PATH — everything inside its band
 # ═══════════════════════════════════════════════════════════════════════════════════

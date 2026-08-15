@@ -1,35 +1,62 @@
-### GreenSense — 00 · Authentication
+### GreenSense — 00 · Xác thực
 #
-# Run this file FIRST. Every other file reuses {{accessToken}} and {{gardenId}}, which are
-# captured here by the response handlers below.
+# Chạy file này TRƯỚC. Các file khác dùng lại {{accessToken}} và {{gardenId}} được bắt ở đây.
 #
-# IntelliJ / VS Code REST Client. Pick an environment from http-client.env.json (`local`
-# unless you are pointing at a deployed box).
+# Hai loại biến, khác nhau về bản chất:
+#   @tên = giá trị        cấu hình tĩnh, khai ngay dưới đây, sửa thẳng trong file
+#   client.global.set()   giá trị BẮT TỪ RESPONSE (token, id) — không thể viết cứng vì
+#                         mỗi lần chạy lại ra một giá trị khác
 #
-# The refresh token never appears in a response body — it arrives as an HttpOnly cookie
-# and the client sends it back automatically. That is why there is no `refreshToken`
-# variable anywhere in these files.
+# Refresh token không xuất hiện ở đâu trong các file này: nó đi bằng cookie HttpOnly và
+# client tự gửi lại. Chỉ access token mới nằm trong body.
 
-### Register a fresh owner
-# 409 EMAIL_TAKEN just means the seeder already created this account — skip to Login.
+# ── Cấu hình — sửa ở đây ────────────────────────────────────────────────────────────
+@baseUrl = https://green.visualedu.ai.vn
+# @baseUrl = http://localhost:8080
+# @baseUrl = http://159.65.4.47:8090
+
+@email = green123@gmail.com
+@password = Green@1508
+@fullName = Chủ vườn GreenSense
+
+# Tài khoản thứ hai, để thử phần chia sẻ vườn ở file 04. Phải đăng ký trước khi mời.
+@memberEmail = member@greensense.vn
+@memberPassword = Green@123
+
+# Mã thiết bị dùng xuyên suốt các file
+@deviceCode = ESP32-A1
+# ────────────────────────────────────────────────────────────────────────────────────
+
+### Đăng ký chủ vườn
+# 409 EMAIL_TAKEN nghĩa là tài khoản đã có — bỏ qua, sang thẳng Đăng nhập.
 POST {{baseUrl}}/api/v1/auth/register
 Content-Type: application/json
 
 {
   "email": "{{email}}",
   "password": "{{password}}",
-  "fullName": "Chủ vườn Demo",
+  "fullName": "{{fullName}}",
   "phone": "0900000001"
 }
 
 > {%
     if (response.status === 201) {
         client.global.set("accessToken", response.body.data.accessToken);
-        client.log("Registered, access token stored");
+        client.log("Đã đăng ký, token đã lưu");
     }
 %}
 
-### Login
+### Đăng ký tài khoản thành viên (cho phần chia sẻ vườn ở file 04)
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{memberEmail}}",
+  "password": "{{memberPassword}}",
+  "fullName": "Thành viên"
+}
+
+### Đăng nhập
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
 
@@ -39,20 +66,20 @@ Content-Type: application/json
 }
 
 > {%
-    client.test("login succeeds", function () {
-        client.assert(response.status === 200, "expected 200, got " + response.status);
+    client.test("đăng nhập thành công", function () {
+        client.assert(response.status === 200, "mong đợi 200, nhận " + response.status);
     });
     client.global.set("accessToken", response.body.data.accessToken);
     client.global.set("userId", response.body.data.user.id);
 %}
 
-### Who am I
+### Tôi là ai
 GET {{baseUrl}}/api/v1/auth/me
 Authorization: Bearer {{accessToken}}
 
-### Silent refresh — rotates the cookie, returns a NEW access token
-# The old cookie is spent by this call. Replaying it is treated as theft and kills every
-# session for the account (see 04-edge-cases.http).
+### Làm mới phiên — xoay cookie, trả access token mới
+# Cookie cũ bị tiêu sau lệnh này. Gọi lại lần nữa với cookie cũ bị coi là trộm phiên và
+# backend huỷ toàn bộ phiên của tài khoản (xem 04-edge-cases.http).
 POST {{baseUrl}}/api/v1/auth/refresh
 
 > {%
@@ -61,22 +88,22 @@ POST {{baseUrl}}/api/v1/auth/refresh
     }
 %}
 
-### Update profile + quiet hours
-# Quiet hours silence INFO and WARNING notifications only; a CRITICAL alert still gets
-# through, because that is the one you set an alarm for.
+### Cập nhật hồ sơ + giờ yên tĩnh
+# Giờ yên tĩnh chỉ hoãn cảnh báo thường; CRITICAL vẫn gửi ngay — đó mới là loại bạn đặt
+# báo thức để nghe.
 PUT {{baseUrl}}/api/v1/auth/me
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "fullName": "Chủ vườn Demo",
+  "fullName": "{{fullName}}",
   "notifyByPush": true,
   "notifyByEmail": false,
   "quietHoursStart": "22:00:00",
   "quietHoursEnd": "06:00:00"
 }
 
-### Register a device push token
+### Đăng ký token thiết bị để nhận push
 POST {{baseUrl}}/api/v1/auth/me/push-tokens
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -85,16 +112,16 @@ Content-Type: application/json
   "token": "fcm-demo-device-token-001"
 }
 
-### Change password — ends every OTHER session
-# Run this and the refresh cookie above stops working; you must log in again.
+### Đổi mật khẩu — kết thúc MỌI phiên khác
+# Chạy xong thì cookie refresh ở trên hết tác dụng, phải đăng nhập lại.
 PATCH {{baseUrl}}/api/v1/auth/me/password
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
   "currentPassword": "{{password}}",
-  "newPassword": "Green@1234"
+  "newPassword": "Green@1509"
 }
 
-### Logout
+### Đăng xuất
 POST {{baseUrl}}/api/v1/auth/logout
