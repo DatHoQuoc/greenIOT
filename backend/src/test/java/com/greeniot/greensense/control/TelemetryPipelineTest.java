@@ -21,14 +21,11 @@ import com.greeniot.greensense.repository.AutomationEventRepository;
 import com.greeniot.greensense.repository.AutomationRuleRepository;
 import com.greeniot.greensense.repository.GardenRepository;
 import com.greeniot.greensense.repository.SensorRepository;
-import de.flapdoodle.embed.mongo.spring.autoconfigure.EmbeddedMongoAutoConfiguration;
+import com.greeniot.greensense.support.IntegrationTest;
+import com.greeniot.greensense.support.TestFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.test.context.TestPropertySource;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -39,13 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * End-to-end exercise of the ingestion path: a reading arrives, breaches the garden
  * threshold, fires an automation rule, drives the fan, and leaves an audit trail.
  */
-@SpringBootTest
-@ImportAutoConfiguration(EmbeddedMongoAutoConfiguration.class)
-@TestPropertySource(properties = {
-        "greensense.mqtt.enabled=false",
-        "greensense.seed.enabled=false",
-        "de.flapdoodle.mongodb.embedded.version=7.0.4"
-})
+@IntegrationTest
 class TelemetryPipelineTest {
 
     @Autowired private TelemetryIngestControl ingestControl;
@@ -56,7 +47,7 @@ class TelemetryPipelineTest {
     @Autowired private AutomationRuleRepository ruleRepository;
     @Autowired private AlertRepository alertRepository;
     @Autowired private AutomationEventRepository eventRepository;
-    @Autowired private MongoTemplate mongoTemplate;
+    @Autowired private TestFixtures fixtures;
 
     private Garden garden;
     private Sensor temperatureSensor;
@@ -64,9 +55,7 @@ class TelemetryPipelineTest {
 
     @BeforeEach
     void setUp() {
-        mongoTemplate.getCollectionNames().stream()
-                .filter(name -> !name.startsWith("system."))
-                .forEach(name -> mongoTemplate.getCollection(name).deleteMany(new org.bson.Document()));
+        fixtures.wipe();
 
         Map<SensorType, Threshold> thresholds = new EnumMap<>(SensorType.class);
         thresholds.put(SensorType.TEMPERATURE, Threshold.builder()

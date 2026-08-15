@@ -25,6 +25,9 @@ import java.lang.annotation.Target;
         "greensense.mqtt.enabled=false",
         "greensense.seed.enabled=false",
         "greensense.weather.enabled=false",
+        // Tắt bộ lập lịch: nếu để bật, tick()/timeoutSweep()/enforceAutoOff() chạy nền
+        // và sửa đúng dữ liệu mà test đang kiểm. Test nào cần chúng thì gọi thẳng method.
+        "greensense.scheduling.enabled=false",
         "de.flapdoodle.mongodb.embedded.version=7.0.4"
 })
 public @interface IntegrationTest {

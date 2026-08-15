@@ -9,12 +9,9 @@ import com.greeniot.greensense.repository.AlertRepository;
 import com.greeniot.greensense.repository.AutomationRuleRepository;
 import com.greeniot.greensense.repository.SensorReadingRepository;
 import com.greeniot.greensense.repository.SensorRepository;
-import de.flapdoodle.embed.mongo.spring.autoconfigure.EmbeddedMongoAutoConfiguration;
+import com.greeniot.greensense.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,13 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * dependencies between controls, and Spring Data derived query methods whose names do not
  * resolve against the entity metadata (those only fail when the repository proxy is built).
  */
-@SpringBootTest
-@ImportAutoConfiguration(EmbeddedMongoAutoConfiguration.class)
-@TestPropertySource(properties = {
-        "greensense.mqtt.enabled=false",
-        "greensense.seed.enabled=false",
-        "de.flapdoodle.mongodb.embedded.version=7.0.4"
-})
+@IntegrationTest
 class ApplicationContextSmokeTest {
 
     @Autowired

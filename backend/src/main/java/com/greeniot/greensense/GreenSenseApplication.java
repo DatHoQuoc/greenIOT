@@ -4,7 +4,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.scheduling.annotation.EnableAsync;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * GreenSense — smart garden IoT backend.
@@ -14,9 +13,12 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * {@code control} holds use-case logic, {@code entity} holds the persistent domain model.
  * Dependencies only ever point boundary → control → repository → entity.
  */
+/*
+ * Lập lịch nằm ở SchedulingConfig chứ không ở đây, để test tắt được — xem javadoc của
+ * class đó.
+ */
 @SpringBootApplication
 @EnableMongoAuditing
-@EnableScheduling
 @EnableAsync
 public class GreenSenseApplication {
 
