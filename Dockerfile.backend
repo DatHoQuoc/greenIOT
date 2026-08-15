@@ -27,7 +27,9 @@ ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseContainerSupport"
 EXPOSE 8080
 
 # Compose and the deploy script both wait on this before declaring the release healthy.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-  CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+# 127.0.0.1, không phải localhost — tránh trường hợp resolver thử ::1 trước khi thử IPv4.
+# Giữ stderr để `docker inspect .State.Health` còn cho biết vì sao hỏng.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=4 \
+  CMD wget -q -O - http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'
 
 ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]

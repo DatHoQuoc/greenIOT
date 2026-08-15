@@ -65,10 +65,22 @@ jobs:
               cd /opt/greensense
               docker compose pull frontend
               docker compose up -d frontend
-              for i in $(seq 1 20); do
-                status=$(docker inspect -f "{{.State.Health.Status}}" greensense-frontend 2>/dev/null || echo starting)
-                [ "$status" = "healthy" ] && break
-                [ "$i" = "20" ] && { docker logs --tail 100 greensense-frontend; exit 1; }
+              # Chờ theo HAI tín hiệu. Chỉ dựa vào .State.Health.Status là sai: image không
+              # khai HEALTHCHECK thì inspect trả "<no value>" và THOÁT 0, nên vòng lặp không
+              # bao giờ thấy "healthy" và luôn timeout dù container chạy hoàn toàn bình thường.
+              for i in $(seq 1 24); do
+                state=$(docker inspect -f "{{.State.Status}}" greensense-frontend 2>/dev/null || echo missing)
+                health=$(docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" greensense-frontend 2>/dev/null || echo none)
+                if [ "$state" = "running" ] && [ "$health" != "starting" ] && [ "$health" != "unhealthy" ]; then
+                  echo "frontend up (state=$state health=$health)"
+                  break
+                fi
+                if [ "$i" = "24" ]; then
+                  echo "TIMEOUT state=$state health=$health"
+                  docker inspect -f "{{json .State.Health}}" greensense-frontend || true
+                  docker logs --tail 100 greensense-frontend
+                  exit 1
+                fi
                 sleep 5
               done
             '

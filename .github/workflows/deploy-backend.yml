@@ -97,10 +97,23 @@ jobs:
               # Wait on the container HEALTHCHECK rather than a fixed sleep: Spring Boot
               # start-up time varies with droplet load, and a sleep that is long enough
               # today silently becomes too short later.
+              #
+              # `health=none` is accepted on purpose: an image without a HEALTHCHECK makes
+              # inspect print "<no value>" and exit 0, so keying only on "healthy" would
+              # hang until timeout even though the container is running fine.
               for i in $(seq 1 30); do
-                status=$(docker inspect -f "{{.State.Health.Status}}" greensense-backend 2>/dev/null || echo starting)
-                [ "$status" = "healthy" ] && break
-                [ "$i" = "30" ] && { docker logs --tail 100 greensense-backend; exit 1; }
+                state=$(docker inspect -f "{{.State.Status}}" greensense-backend 2>/dev/null || echo missing)
+                health=$(docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" greensense-backend 2>/dev/null || echo none)
+                if [ "$state" = "running" ] && [ "$health" != "starting" ] && [ "$health" != "unhealthy" ]; then
+                  echo "backend up (state=$state health=$health)"
+                  break
+                fi
+                if [ "$i" = "30" ]; then
+                  echo "TIMEOUT state=$state health=$health"
+                  docker inspect -f "{{json .State.Health}}" greensense-backend || true
+                  docker logs --tail 100 greensense-backend
+                  exit 1
+                fi
                 sleep 5
               done
             '

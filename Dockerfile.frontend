@@ -46,7 +46,15 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://localhost:3000 >/dev/null 2>&1 || exit 1
+# 127.0.0.1 chứ KHÔNG phải localhost: Next standalone với HOSTNAME=0.0.0.0 chỉ nghe IPv4,
+# trong khi /etc/hosts của Alpine có cả "::1 localhost" và busybox wget thử ::1 trước —
+# connection refused, healthcheck fail vĩnh viễn dù ứng dụng chạy hoàn toàn bình thường.
+# (Backend không dính vì JVM mặc định bind dual-stack.)
+#
+# KHÔNG nuốt stderr và KHÔNG thêm `|| exit 1`: bản trước làm cả hai, nên khi hỏng thì
+# `docker inspect` chỉ hiện Output rỗng với ExitCode 1 — che mất cả thông báo lỗi lẫn
+# exit code thật (127 "không có wget" bị đổi thành 1). Để nguyên thì lần sau nhìn là biết.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=5 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000
 
 CMD ["node", "server.js"]
