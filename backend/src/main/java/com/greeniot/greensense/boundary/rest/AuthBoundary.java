@@ -80,8 +80,13 @@ public class AuthBoundary {
             String refreshToken,
             HttpServletRequest httpRequest) {
 
+        // 401, không phải 409: đây là "chưa có thông tin xác thực", trạng thái hoàn toàn
+        // bình thường khi mở trang lần đầu. Trả 409 khiến console của người dùng đỏ lên
+        // trong một tình huống không có gì sai, và client không phân biệt được với lỗi thật.
         if (refreshToken == null || refreshToken.isBlank()) {
-            throw new BusinessRuleException("NO_REFRESH_TOKEN", "No refresh token present");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.fail(new ApiResponse.ApiError(
+                            "NO_REFRESH_TOKEN", "Chưa đăng nhập", null)));
         }
 
         AuthControl.Session session = authControl.refresh(refreshToken, userAgent(httpRequest));

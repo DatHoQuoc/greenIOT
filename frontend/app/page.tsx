@@ -24,6 +24,7 @@ import {
 
 import { useSession } from '@/hooks/useSession'
 import { useDashboard } from '@/hooks/useDashboard'
+import { CreateGarden } from '@/components/create-garden'
 import { ErrorState, Skeleton } from '@/components/screen-state'
 import { SensorChart } from '@/components/sensor-chart'
 import { errorMessage } from '@/lib/api/client'
@@ -118,7 +119,7 @@ function MoistureChart({ gardenId, tile }: { gardenId: string; tile: SensorTile 
 
 export default function Page() {
   const router = useRouter()
-  const { gardenId, isBootstrapping, isAuthenticated } = useSession()
+  const { gardenId, gardens, isBootstrapping, isAuthenticated, refresh } = useSession()
   const { dashboard, isLoading, error, isLive, refetch, toggleSystem } = useDashboard(gardenId)
   const [tab, setTab] = useState('Trạng thái')
   const [toggleError, setToggleError] = useState<string | null>(null)
@@ -126,6 +127,12 @@ export default function Page() {
   useEffect(() => {
     if (!isBootstrapping && !isAuthenticated) router.replace('/login')
   }, [isBootstrapping, isAuthenticated, router])
+
+  // Tài khoản mới chưa có vườn nào. Không có nhánh này thì `dashboard` mãi là null và màn
+  // hình rơi vào `return null` bên dưới — trang trắng, không lời giải thích, không lối ra.
+  if (!isBootstrapping && isAuthenticated && gardens.length === 0) {
+    return <CreateGarden onCreated={refresh} />
+  }
 
   if (isBootstrapping || (isLoading && !dashboard)) {
     return (

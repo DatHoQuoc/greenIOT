@@ -45,7 +45,12 @@ export default function RootLayout({
       <body className="antialiased">
         {/* Owns the access token and the selected garden for every screen below. */}
         <SessionProvider>{children}</SessionProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/*
+          Chỉ nạp khi thực sự chạy trên Vercel. Ứng dụng đang được phục vụ từ droplet, ở đó
+          /_vercel/insights/script.js không tồn tại — script hỏng, trình chặn quảng cáo báo
+          ERR_BLOCKED_BY_CLIENT, và console đỏ lên vì một thứ chẳng liên quan gì đến ứng dụng.
+        */}
+        {process.env.NEXT_PUBLIC_VERCEL_ENV && <Analytics />}
       </body>
     </html>
   )
